@@ -34,11 +34,12 @@ wss.on("connection", (client) => {
   assembly.on("open", () => {
     console.log("🧠 AssemblyAI connected");
 
-    // 🔥 REQUIRED: START STREAM
+    // 🔥 REQUIRED START FRAME (FIX)
     assembly.send(
       JSON.stringify({
         type: "Start",
         sample_rate: 16000,
+        encoding: "pcm_s16le", // ✅ THIS WAS MISSING
       })
     );
   });
@@ -47,7 +48,6 @@ wss.on("connection", (client) => {
   assembly.on("message", (msg) => {
     const data = JSON.parse(msg.toString());
 
-    // We only forward FINAL turns
     if (data.type === "Turn" && data.text) {
       client.send(
         JSON.stringify({
@@ -56,6 +56,10 @@ wss.on("connection", (client) => {
         })
       );
     }
+  });
+
+  assembly.on("error", (err) => {
+    console.error("❌ AssemblyAI error:", err);
   });
 
   // 🎙️ Browser → Assembly
