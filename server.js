@@ -10,7 +10,6 @@ if (!ASSEMBLYAI_API_KEY) {
 
 const app = express();
 
-// ✅ Health check for Render
 app.get("/", (req, res) => {
   res.send("El Wasta WS Server is running");
 });
@@ -23,7 +22,6 @@ console.log("✅ WS server initialized");
 wss.on("connection", (client) => {
   console.log("🔌 Browser connected");
 
-  // 🔗 AssemblyAI Realtime
   const assembly = new WebSocket(
     "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000",
     {
@@ -34,12 +32,24 @@ wss.on("connection", (client) => {
   );
 
   assembly.on("open", () => {
-    console.log("🧠 AssemblyAI realtime connected");
+    console.log("🧠 AssemblyAI connected");
+
+    // ✅ REQUIRED START MESSAGE
+    assembly.send(
+      JSON.stringify({
+        sample_rate: 16000,
+        format: "pcm_s16le",
+      })
+    );
   });
 
-  // 🧠 Assembly → Browser
   assembly.on("message", (msg) => {
     const data = JSON.parse(msg.toString());
+
+    if (data.error) {
+      console.error("❌ AssemblyAI error:", data.error);
+      return;
+    }
 
     if (data.text) {
       client.send(
@@ -51,28 +61,23 @@ wss.on("connection", (client) => {
     }
   });
 
-  assembly.on("error", (err) => {
-    console.error("❌ AssemblyAI WS error", err);
-  });
-
-  // 🎙️ Browser → Assembly
   client.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
 
-      if (data.type === "audio") {
+      if (
+        data.type === "audio" &&
+        data.chunk &&
+        assembly.readyState === WebSocket.OPEN
+      ) {
         assembly.send(
           JSON.stringify({
             audio_data: data.chunk,
           })
         );
       }
-
-      if (data.type === "end") {
-        assembly.send(JSON.stringify({ terminate_session: true }));
-      }
     } catch (e) {
-      console.error("❌ Invalid browser message", e);
+      console.error("❌ Bad browser message", e);
     }
   });
 
@@ -80,6 +85,7 @@ wss.on("connection", (client) => {
     console.log("❌ Client disconnected");
 
     if (assembly.readyState === WebSocket.OPEN) {
+      assembly.send(JSON.stringify({ terminate_session: true }));
       assembly.close();
     }
   };
@@ -90,5 +96,5 @@ wss.on("connection", (client) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 HTTP + WS listening on port ${PORT}`);
+  console.log(`🚀 WS server listening on ${PORT}`);
 });
