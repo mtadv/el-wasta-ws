@@ -2,7 +2,6 @@ import "dotenv/config";
 import http from "http";
 import express from "express";
 import WebSocket, { WebSocketServer } from "ws";
-import { spawn } from "child_process";
 
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
 if (!ASSEMBLYAI_API_KEY) {
@@ -24,9 +23,9 @@ console.log("✅ WS server initialized");
 wss.on("connection", (client) => {
   console.log("🔌 Browser connected");
 
-  // 🔗 Connect to AssemblyAI Realtime
+  // 🔗 AssemblyAI Realtime
   const assembly = new WebSocket(
-    "wss://api.assemblyai.com/v2/realtime/ws",
+    "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000",
     {
       headers: {
         Authorization: ASSEMBLYAI_API_KEY,
@@ -34,47 +33,11 @@ wss.on("connection", (client) => {
     }
   );
 
-  let ffmpeg;
-
   assembly.on("open", () => {
     console.log("🧠 AssemblyAI realtime connected");
-
-    // ✅ REQUIRED start message
-    assembly.send(
-      JSON.stringify({
-        sample_rate: 16000,
-      })
-    );
-
-    // 🎛️ FFmpeg: Opus/WebM → PCM16
-    ffmpeg = spawn("ffmpeg", [
-      "-loglevel",
-      "quiet",
-      "-i",
-      "pipe:0",
-      "-f",
-      "s16le",
-      "-acodec",
-      "pcm_s16le",
-      "-ac",
-      "1",
-      "-ar",
-      "16000",
-      "pipe:1",
-    ]);
-
-    ffmpeg.stdout.on("data", (pcm) => {
-      if (assembly.readyState === WebSocket.OPEN) {
-        assembly.send(
-          JSON.stringify({
-            audio_data: pcm.toString("base64"),
-          })
-        );
-      }
-    });
   });
 
-  // 🧠 Transcripts from AssemblyAI → Browser
+  // 🧠 Assembly → Browser
   assembly.on("message", (msg) => {
     const data = JSON.parse(msg.toString());
 
@@ -92,12 +55,21 @@ wss.on("connection", (client) => {
     console.error("❌ AssemblyAI WS error", err);
   });
 
-  // 🎙️ Audio from browser → FFmpeg
+  // 🎙️ Browser → Assembly
   client.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
-      if (data.type === "audio" && data.chunk && ffmpeg) {
-        ffmpeg.stdin.write(Buffer.from(data.chunk, "base64"));
+
+      if (data.type === "audio") {
+        assembly.send(
+          JSON.stringify({
+            audio_data: data.chunk,
+          })
+        );
+      }
+
+      if (data.type === "end") {
+        assembly.send(JSON.stringify({ terminate_session: true }));
       }
     } catch (e) {
       console.error("❌ Invalid browser message", e);
@@ -108,12 +80,7 @@ wss.on("connection", (client) => {
     console.log("❌ Client disconnected");
 
     if (assembly.readyState === WebSocket.OPEN) {
-      assembly.send(JSON.stringify({ terminate_session: true }));
       assembly.close();
-    }
-
-    if (ffmpeg) {
-      ffmpeg.kill("SIGKILL");
     }
   };
 
