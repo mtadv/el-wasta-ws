@@ -30,56 +30,49 @@ wss.on("connection", (client) => {
       },
     }
   );
-  
-  
 
   assembly.on("open", () => {
     console.log("🧠 AssemblyAI connected");
 
-    // ✅ REQUIRED START MESSAGE
+    // 🔥 REQUIRED: START STREAM
     assembly.send(
       JSON.stringify({
+        type: "Start",
         sample_rate: 16000,
-        format: "pcm_s16le",
       })
     );
   });
 
+  // 🧠 Assembly → Browser
   assembly.on("message", (msg) => {
     const data = JSON.parse(msg.toString());
 
-    if (data.error) {
-      console.error("❌ AssemblyAI error:", data.error);
-      return;
-    }
-
-    if (data.text) {
+    // We only forward FINAL turns
+    if (data.type === "Turn" && data.text) {
       client.send(
         JSON.stringify({
           text: data.text,
-          isFinal: data.message_type === "FinalTranscript",
+          isFinal: data.is_final === true,
         })
       );
     }
   });
 
+  // 🎙️ Browser → Assembly
   client.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
 
-      if (
-        data.type === "audio" &&
-        data.chunk &&
-        assembly.readyState === WebSocket.OPEN
-      ) {
+      if (data.type === "audio" && data.chunk) {
         assembly.send(
           JSON.stringify({
+            type: "Audio",
             audio_data: data.chunk,
           })
         );
       }
     } catch (e) {
-      console.error("❌ Bad browser message", e);
+      console.error("❌ Bad browser message");
     }
   });
 
@@ -87,7 +80,7 @@ wss.on("connection", (client) => {
     console.log("❌ Client disconnected");
 
     if (assembly.readyState === WebSocket.OPEN) {
-      assembly.send(JSON.stringify({ terminate_session: true }));
+      assembly.send(JSON.stringify({ type: "Stop" }));
       assembly.close();
     }
   };
