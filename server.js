@@ -23,13 +23,14 @@ wss.on("connection", (client) => {
   console.log("🔌 Browser connected");
 
   const assembly = new WebSocket(
-    "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000",
+    "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&model=universal",
     {
       headers: {
         Authorization: ASSEMBLYAI_API_KEY,
       },
     }
   );
+  
 
   assembly.on("open", () => {
     console.log("🧠 AssemblyAI connected");
